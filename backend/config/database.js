@@ -3,11 +3,17 @@ import mongoose from 'mongoose';
 export async function connectDatabase() {
   const { MONGODB_URI } = process.env;
   if (!MONGODB_URI) {
-    console.warn('MONGODB_URI is not set. Database features will be unavailable.');
+    throw new Error('MONGODB_URI environment variable is missing.');
+  }
+
+  if (mongoose.connection.readyState === 1) {
     return;
   }
 
   mongoose.set('strictQuery', true);
-  await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 15000 });
+  await mongoose.connect(MONGODB_URI, {
+    serverSelectionTimeoutMS: 5000,
+    connectTimeoutMS: 10000
+  });
   console.log('Connected to MongoDB Atlas successfully.');
 }

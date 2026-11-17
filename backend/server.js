@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import mongoose from 'mongoose';
 import { connectDatabase } from './config/database.js';
 import { seedDefaultDepartments } from './controllers/departmentController.js';
 import studentRoutes from './routes/studentRoutes.js';
@@ -14,6 +15,9 @@ const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+let dbStatus = 'initialized';
+let dbError = null;
 
 app.disable('x-powered-by');
 app.use(helmet());
@@ -39,13 +43,43 @@ app.use(express.json({ limit: '20kb' }));
 app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }));
 
 app.get('/health', (_request, response) => {
-  response.json({ success: true, status: 'ok' });
+  response.json({
+    success: true,
+    status: 'ok',
+    database: {
+      status: dbStatus,
+      readyState: mongoose.connection.readyState,
+      error: dbError
+    }
+  });
 });
+
+// Auto-connect middleware for database requests
+app.use('/api', async (_req, res, next) => {
+  if (mongoose.connection.readyState !== 1) {
+    try {
+      await connectDatabase();
+      dbStatus = 'connected';
+      dbError = null;
+    } catch (err) {
+      dbStatus = 'failed';
+      dbError = err.message;
+      return res.status(503).json({
+        success: false,
+        message: `Database connection error: ${err.message}`
+      });
+    }
+  }
+  next();
+});
+
 app.use('/api/students', studentRoutes);
 app.use('/api/departments', departmentRoutes);
+
 app.use((_request, response) => {
   response.status(404).json({ success: false, message: 'The requested resource was not found.' });
 });
+
 app.use((error, _request, response, _next) => {
   if (error.message === 'Origin is not allowed by CORS.') {
     return response.status(403).json({ success: false, message: 'This website is not allowed to access the API.' });
@@ -68,7 +102,11 @@ async function start() {
   try {
     await connectDatabase();
     await seedDefaultDepartments();
+    dbStatus = 'connected';
+    dbError = null;
   } catch (error) {
+    dbStatus = 'failed';
+    dbError = error.message;
     console.error('Database connection warning:', error.message);
   }
 }
