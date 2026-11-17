@@ -21,7 +21,19 @@ app.disable('x-powered-by');
 app.use(helmet());
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    if (
+      !origin ||
+      allowedOrigins.includes('*') ||
+      allowedOrigins.includes(origin) ||
+      allowedOrigins.some((allowed) => {
+        if (allowed.startsWith('*.')) {
+          return origin.endsWith(allowed.slice(1));
+        }
+        return false;
+      })
+    ) {
+      return callback(null, true);
+    }
     return callback(new Error('Origin is not allowed by CORS.'));
   }
 }));
